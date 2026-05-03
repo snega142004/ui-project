@@ -77,7 +77,7 @@ def send_message(data: MessageCreate, user=Depends(get_current_user)):
             else:
                 reply = ask_ai(message)
         else:
-            reply = ask_ai(message)
+            reply = ask_ai(message) or "No answer generated"
 
         # Save bot message
         cursor.execute(

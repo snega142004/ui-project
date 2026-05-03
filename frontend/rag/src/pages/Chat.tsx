@@ -10,7 +10,6 @@ export default function Chat() {
 
   const email = localStorage.getItem("email");
 
-  // ✅ Load threads on mount
   useEffect(() => {
     loadThreads();
   }, []);
@@ -20,18 +19,23 @@ export default function Chat() {
       const res = await API.get("/threads/");
       setThreads(res.data);
     } catch (err) {
-      console.error("Error loading threads", err);
+      console.error(err);
     }
   };
 
   const createThread = async () => {
-    const res = await API.post("/threads/", {
-      title: "New Chat"
-    });
+    try {
+      const res = await API.post("/threads/", { 
+        title: "New Chat" 
+      });
+      const id = res.data.thread_id || res.data.id;
 
-    setCurrentThread(res.data.thread_id);
-    setMessages([]);
-    loadThreads();
+      setCurrentThread(id);
+      setMessages([]);
+      loadThreads();
+    } catch (err) {
+      console.error("THREAD ERROR");
+    }
   };
 
   const loadMessages = async (id: number) => {
@@ -40,17 +44,21 @@ export default function Chat() {
       setMessages(res.data);
       setCurrentThread(id);
     } catch (err) {
-      console.error("Error loading messages", err);
+      console.error(err);
     }
   };
 
   const deleteThread = async (id: number) => {
-    await API.delete(`/threads/${id}`);
-    loadThreads();
+    try {
+      await API.delete(`/threads/${id}`);
+      loadThreads();
 
-    if (id === currentThread) {
-      setMessages([]);
-      setCurrentThread(null);
+      if (id === currentThread) {
+        setMessages([]);
+        setCurrentThread(null);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -58,33 +66,46 @@ export default function Chat() {
     const newTitle = prompt("Enter new title");
     if (!newTitle) return;
 
-    await API.put(`/threads/${id}`, { title: newTitle });
-    loadThreads();
+    try {
+      await API.put(`/threads/${id}`, { title: newTitle });
+      loadThreads();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
+  // ✅ FINAL FIXED FUNCTION
   const sendMessage = async () => {
     if (!input.trim() || !currentThread) return;
 
     const question = input;
 
-    // UI update
-    setMessages(prev => [...prev, { role: "user", message: question }]);
+    // show user msg instantly
+    setMessages(prev => [...prev, { role: "user", content: question }]);
     setInput("");
     setLoading(true);
 
     try {
       const res = await API.post("/messages/", {
         thread_id: currentThread,
-        message: question
+        question: question,
+        message: question // ✅ correct key
       });
 
+      // show bot reply
       setMessages(prev => [
         ...prev,
-        { role: "assistant", message: res.data.reply }
+        {
+          role: "assistant",
+          content: res.data.answer || res.data.reply || "No response"
+        }
       ]);
 
-      // ✅ Auto rename
-      const thread = threads.find(t => t.id === currentThread);
+      // auto rename
+      const thread = threads.find(
+        t => (t.thread_id || t.id) === currentThread
+      );
+
       if (thread && thread.title === "New Chat") {
         await API.put(`/threads/${currentThread}`, {
           title: question.slice(0, 40)
@@ -92,14 +113,15 @@ export default function Chat() {
       }
 
       loadThreads();
-    } catch (err) {
-      console.error("Message error", err);
+    } catch (err: any) {
+      console.log("ERROR 👉", err.response?.data);
+      alert("Message failed ❌");
     }
 
     setLoading(false);
   };
 
-  // ✅ DATE FIX (important)
+  // DATE FILTER
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
@@ -123,26 +145,28 @@ export default function Chat() {
   });
 
   const renderThreads = (list: any[]) =>
-    list.map(t => (
-      <div key={t.id} className="thread-row">
-        <div className="thread" onClick={() => loadMessages(t.id)}>
-          {t.title}
-        </div>
+    list.map(t => {
+      const id = t.thread_id || t.id;
 
-        <div className="thread-actions">
-          <span onClick={() => renameThread(t.id)}>✏️</span>
-          <span onClick={() => deleteThread(t.id)}>❌</span>
+      return (
+        <div key={id} className="thread-row">
+          <div className="thread" onClick={() => loadMessages(id)}>
+            {t.title}
+          </div>
+
+          <div className="thread-actions">
+            <span onClick={() => renameThread(id)}>✏️</span>
+            <span onClick={() => deleteThread(id)}>❌</span>
+          </div>
         </div>
-      </div>
-    ));
+      );
+    });
 
   return (
     <div className="chat-container">
       {/* SIDEBAR */}
       <div className="sidebar">
-        <button className="new-chat-btn" onClick={createThread}>
-          + New Chat
-        </button>
+        <button onClick={createThread}>+ New Chat</button>
 
         <h4>Today</h4>
         {todayChats.length ? renderThreads(todayChats) : <p>No chats</p>}
@@ -152,64 +176,32 @@ export default function Chat() {
 
         <h4>Older</h4>
         {olderChats.length ? renderThreads(olderChats) : <p>No chats</p>}
-
-        <button
-          className="logout-btn"
-          onClick={() => {
-            localStorage.clear();
-            window.location.href = "/login";
-          }}
-        >
-          Logout
-        </button>
       </div>
 
       {/* MAIN */}
       <div className="chat-area">
         <div className="chat-header">
-          <div className="logo">🤖 JuzServ AI</div>
-          <div className="user-email">{email}</div>
+          <div>🤖 JuzServ AI</div>
+          <div>{email}</div>
         </div>
 
-        {/* Upload */}
-        <div className="upload-bar">
-          <input type="file" id="fileInput" />
-          <button
-            onClick={async () => {
-              const fileInput: any = document.getElementById("fileInput");
-              const file = fileInput.files[0];
-
-              if (!file) return alert("Select file ❌");
-
-              const formData = new FormData();
-              formData.append("file", file);
-
-              await API.post("/upload/", formData);
-              alert("Uploaded ✅");
-            }}
-          >
-            Upload PDF
-          </button>
-        </div>
-
-        {/* Messages */}
         <div className="messages">
           {messages.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "msg-right" : "msg-left"}>
-              {m.message}
+            <div
+              key={i}
+              className={m.role === "user" ? "msg-right" : "msg-left"}
+            >
+              {m.content}
             </div>
           ))}
-
-          {loading && <div className="loading-bar"></div>}
+          {loading && <p>Loading...</p>}
         </div>
 
-        {/* Input */}
         <div className="input-area">
-           <span className="mic-icon">🎤</span>
-           <input
+          <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask anything..."
+            placeholder="Ask something..."
           />
           <button onClick={sendMessage}>Send</button>
         </div>

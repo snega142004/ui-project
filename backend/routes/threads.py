@@ -1,14 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends
 from db import cursor, conn
 from deps import get_current_user
+from schemas import ThreadCreate
 
 router = APIRouter(prefix="/threads")
 
-
-# ✅ CREATE THREAD
+# ✅ CREATE THREAD (FIXED)
 @router.post("/")
-def create_thread(title: str, user=Depends(get_current_user)):
-
+def create_thread(data: ThreadCreate, user=Depends(get_current_user)):
     try:
         user_id = user["id"]
 
@@ -18,7 +17,7 @@ def create_thread(title: str, user=Depends(get_current_user)):
             VALUES (%s, %s)
             RETURNING id
             """,
-            (user_id, title)
+            (user_id, data.title)
         )
 
         thread_id = cursor.fetchone()[0]
@@ -31,10 +30,9 @@ def create_thread(title: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ✅ GET THREADS (🔥 FIXED ROUTE)
+# ✅ GET THREADS
 @router.get("/")
 def get_threads(user=Depends(get_current_user)):
-
     cursor.execute(
         """
         SELECT id, title, created_at
@@ -48,36 +46,25 @@ def get_threads(user=Depends(get_current_user)):
     rows = cursor.fetchall()
 
     return [
-        {
-            "id": r[0],
-            "title": r[1],
-            "created_at": str(r[2])
-        }
+        {"id": r[0], "title": r[1], "created_at": str(r[2])}
         for r in rows
     ]
 
 
-# ✅ UPDATE TITLE
+# ✅ UPDATE
 @router.put("/{thread_id}")
 def update_thread(thread_id: int, data: dict):
-
     cursor.execute(
         "UPDATE threads SET title=%s WHERE id=%s",
         (data.get("title"), thread_id)
     )
-
     conn.commit()
     return {"msg": "updated"}
 
 
-# ✅ DELETE THREAD
+# ✅ DELETE
 @router.delete("/{thread_id}")
 def delete_thread(thread_id: int):
-
-    cursor.execute(
-        "DELETE FROM threads WHERE id=%s",
-        (thread_id,)
-    )
-
+    cursor.execute("DELETE FROM threads WHERE id=%s", (thread_id,))
     conn.commit()
     return {"msg": "deleted"}
